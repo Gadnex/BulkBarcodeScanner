@@ -26,14 +26,13 @@ import com.google.zxing.multi.GenericMultipleBarcodeReader;
 import com.google.zxing.qrcode.QRCodeReader;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ResourceBundle;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.FileImageInputStream;
@@ -62,23 +61,28 @@ public class BarcodeScanner {
         while (true) {
             List<File> files = getFilesInFolder(inputFolder);
             for (File file : files) {
-                String fileNameLoweCase = file.getName().toLowerCase();
-                if (fileNameLoweCase.endsWith(".pdf")) {
-                    BarcodeScanner barcodeScanner = new BarcodeScanner();
-                    Document document = barcodeScanner.scanPdfDocument(file);
-                    String outputFolder = resourceBundle.getString("outputFolder");
-                    File outputfile = new File(outputFolder + file.getName() + ".xml");
-                    barcodeScanner.marshalDocument(document, outputfile);
-                } else if (fileNameLoweCase.endsWith(".tif") || fileNameLoweCase.endsWith(".tiff")) {
-                    BarcodeScanner barcodeScanner = new BarcodeScanner();
-                    Document document = barcodeScanner.scanTiffDocument(file);
-                    String outputFolder = resourceBundle.getString("outputFolder");
-                    File outputfile = new File(outputFolder + file.getName() + ".xml");
-                    barcodeScanner.marshalDocument(document, outputfile);
-                } else {
-
+                try {
+                    String fileNameLoweCase = file.getName().toLowerCase();
+                    if (fileNameLoweCase.endsWith(".pdf")) {
+                        BarcodeScanner barcodeScanner = new BarcodeScanner();
+                        Document document = barcodeScanner.scanPdfDocument(file);
+                        String outputFolder = resourceBundle.getString("outputFolder");
+                        barcodeScanner.marshalDocument(document, outputFolder, file.getName());
+                        file.delete();
+                    } else if (fileNameLoweCase.endsWith(".tif") || fileNameLoweCase.endsWith(".tiff")) {
+                        BarcodeScanner barcodeScanner = new BarcodeScanner();
+                        Document document = barcodeScanner.scanTiffDocument(file);
+                        String outputFolder = resourceBundle.getString("outputFolder");
+                        barcodeScanner.marshalDocument(document, outputFolder, file.getName());
+                        file.delete();
+                    } else {
+                        moveInvalidInputFile(file.getName());
+                    }
+                } catch (FileNotFoundException ex) {
+                    // Do nothing
+                } catch (Exception ex) {
+                    moveInvalidInputFile(file.getName());
                 }
-                file.delete();
             }
         }
     }
@@ -93,54 +97,44 @@ public class BarcodeScanner {
         return files;
     }
 
-    public Document scanPdfDocument(File pdfFile) {
+    public Document scanPdfDocument(File pdfFile) throws IOException {
         Document document = new Document();
         document.setFileName(pdfFile.getName());
         List<Page> pages = new ArrayList<>();
-        try {
-            PDDocument pdfDocument = PDDocument.load(pdfFile);
-            List<PDPage> pdfPages = pdfDocument.getDocumentCatalog().getAllPages();
-            for (int i = 0; i < pdfPages.size(); i++) {
-                Page page = new Page();
-                page.setPageNumber(i + 1);
-                PDPage pdfPage = pdfPages.get(i);
-                BufferedImage bufferedImage = pdfPage.convertToImage();
-                page.setBarcodes(scanImage(bufferedImage));
-                pages.add(page);
-            }
-            pdfDocument.close();
-            document.setPages(pages);
-            return document;
-        } catch (IOException ex) {
-            Logger.getLogger(BarcodeScanner.class.getName()).log(Level.SEVERE, null, ex);
-            return null;
+        PDDocument pdfDocument = PDDocument.load(pdfFile);
+        List<PDPage> pdfPages = pdfDocument.getDocumentCatalog().getAllPages();
+        for (int i = 0; i < pdfPages.size(); i++) {
+            Page page = new Page();
+            page.setPageNumber(i + 1);
+            PDPage pdfPage = pdfPages.get(i);
+            BufferedImage bufferedImage = pdfPage.convertToImage();
+            page.setBarcodes(scanImage(bufferedImage));
+            pages.add(page);
         }
+        pdfDocument.close();
+        document.setPages(pages);
+        return document;
     }
 
-    public Document scanTiffDocument(File tiffFile) {
+    public Document scanTiffDocument(File tiffFile) throws IOException {
         Document document = new Document();
         document.setFileName(tiffFile.getName());
         List<Page> pages = new ArrayList<>();
-        try {
-            Iterator iterator = ImageIO.getImageReadersByFormatName("tiff");
-            ImageReader reader = (ImageReader) iterator.next();
-            ImageInputStream iis = new FileImageInputStream(tiffFile);
-            reader.setInput(iis, false, true);
-            int pageCount = reader.getNumImages(true);
-            for (int i = 0; i < pageCount; i++) {
-                Page page = new Page();
-                page.setPageNumber(i + 1);
-                BufferedImage bufferedImage = reader.read(i);;
-                page.setBarcodes(scanImage(bufferedImage));
-                pages.add(page);
-            }
-            iis.close();
-            document.setPages(pages);
-            return document;
-        } catch (IOException ex) {
-            Logger.getLogger(BarcodeScanner.class.getName()).log(Level.SEVERE, null, ex);
-            return null;
+        Iterator iterator = ImageIO.getImageReadersByFormatName("tiff");
+        ImageReader reader = (ImageReader) iterator.next();
+        ImageInputStream iis = new FileImageInputStream(tiffFile);
+        reader.setInput(iis, false, true);
+        int pageCount = reader.getNumImages(true);
+        for (int i = 0; i < pageCount; i++) {
+            Page page = new Page();
+            page.setPageNumber(i + 1);
+            BufferedImage bufferedImage = reader.read(i);;
+            page.setBarcodes(scanImage(bufferedImage));
+            pages.add(page);
         }
+        iis.close();
+        document.setPages(pages);
+        return document;
     }
 
     private List<Barcode> scanImage(BufferedImage bufferedImage) {
@@ -162,13 +156,26 @@ public class BarcodeScanner {
                 barcodes.add(barcode);
             }
         } catch (NotFoundException ex) {
-            Logger.getLogger(BarcodeScanner.class.getName()).log(Level.SEVERE, null, ex);
+            // No barcodes found in image
         }
 
         return barcodes;
     }
 
-    private void marshalDocument(Document document, File outputFile) {
+    private void marshalDocument(Document document, String outputFolder, String inputFileName) {
+        File outputFile = new File(outputFolder + inputFileName + ".xml");
+        if (outputFile.exists() && !outputFile.isDirectory()) {
+            boolean fileExists = true;
+            int i = 1;
+            while (fileExists) {
+                outputFile = new File(outputFolder + inputFileName + "_" + i + ".xml");
+                if (outputFile.exists()) {
+                    i++;
+                } else {
+                    fileExists = false;
+                }
+            }
+        }
         try {
             JAXBContext jaxbContext = JAXBContextFactory.createContext(new Class[]{Document.class}, null);
             Marshaller jaxbMarshaller = jaxbContext.createMarshaller();
@@ -178,5 +185,29 @@ public class BarcodeScanner {
         } catch (JAXBException e) {
             e.printStackTrace();
         }
+    }
+
+    private static void moveInvalidInputFile(String inputFileName) {
+        String invalidFileDestination = resourceBundle.getString("inputFolder") + "_Invalid\\";
+        File invalidDestinationFolder = new File(invalidFileDestination);
+        if (!invalidDestinationFolder.exists() || !invalidDestinationFolder.isDirectory()) {
+            System.out.println("Creating invalid file directory: " + invalidFileDestination);
+            invalidDestinationFolder.mkdir();
+        }
+        File inputFile = new File(resourceBundle.getString("inputFolder") + inputFileName);
+        File newFileName = new File(invalidFileDestination + inputFileName);
+        if (newFileName.exists() && !newFileName.isDirectory()) {
+            boolean fileExists = true;
+            int i = 1;
+            while (fileExists) {
+                newFileName = new File(invalidFileDestination + inputFileName + "_" + i);
+                if (newFileName.exists()) {
+                    i++;
+                } else {
+                    fileExists = false;
+                }
+            }
+        }
+        inputFile.renameTo(newFileName);
     }
 }
