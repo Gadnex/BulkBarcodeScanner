@@ -33,6 +33,10 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ResourceBundle;
+import java.util.logging.FileHandler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.FileImageInputStream;
@@ -54,9 +58,11 @@ import org.eclipse.persistence.jaxb.JAXBContextFactory;
  */
 public class BarcodeScanner {
 
+    private static final Logger LOGGER = Logger.getLogger(BarcodeScanner.class.getName());
     private static final ResourceBundle resourceBundle = ResourceBundle.getBundle("config");
 
     public static void main(String[] args) {
+        setLogFileHandler();
         File inputFolder = new File(resourceBundle.getString("inputFolder"));
         while (true) {
             List<File> files = getFilesInFolder(inputFolder);
@@ -76,14 +82,36 @@ public class BarcodeScanner {
                         barcodeScanner.marshalDocument(document, outputFolder, file.getName());
                         file.delete();
                     } else {
+                        LOGGER.log(Level.WARNING, "The input file \"{0}\" does not have the file extension .pdf, .tiff or .tif", file.getName());
                         moveInvalidInputFile(file.getName());
                     }
                 } catch (FileNotFoundException ex) {
-                    // Do nothing
+                    LOGGER.log(Level.SEVERE, null, ex);
                 } catch (Exception ex) {
+                    LOGGER.log(Level.SEVERE, null, ex);
                     moveInvalidInputFile(file.getName());
                 }
             }
+        }
+    }
+
+    private static void setLogFileHandler() {
+        // Set the Log File Handler
+        try {
+            String logFilePath = resourceBundle.getString("logFolder");
+            File logDirectory = new File(logFilePath);
+            if (!logDirectory.exists()) {
+                logDirectory.mkdir();
+            }
+            FileHandler fileHandler = new FileHandler(logFilePath + "LogFile.%u.%g.log", 1024 * 1024, 100);
+            fileHandler.setFormatter(new SimpleFormatter());
+            Level level = Level.parse(resourceBundle.getString("logLevel"));
+            fileHandler.setLevel(level);
+            LOGGER.addHandler(fileHandler);
+        } catch (IOException ex) {
+            LOGGER.log(Level.SEVERE, null, ex);
+        } catch (SecurityException ex) {
+            LOGGER.log(Level.SEVERE, null, ex);
         }
     }
 
@@ -108,7 +136,13 @@ public class BarcodeScanner {
             page.setPageNumber(i + 1);
             PDPage pdfPage = pdfPages.get(i);
             BufferedImage bufferedImage = pdfPage.convertToImage();
-            page.setBarcodes(scanImage(bufferedImage));
+            List<Barcode> barcodes = scanImage(bufferedImage);
+            if (barcodes.isEmpty()) {
+                LOGGER.log(Level.WARNING,
+                        "No barcodes found on page {0} of the input file {1}.",
+                        new Object[]{i, pdfFile.getAbsolutePath()});
+            }
+            page.setBarcodes(barcodes);
             pages.add(page);
         }
         pdfDocument.close();
@@ -129,7 +163,13 @@ public class BarcodeScanner {
             Page page = new Page();
             page.setPageNumber(i + 1);
             BufferedImage bufferedImage = reader.read(i);;
-            page.setBarcodes(scanImage(bufferedImage));
+            List<Barcode> barcodes = scanImage(bufferedImage);
+            if (barcodes.isEmpty()) {
+                LOGGER.log(Level.WARNING,
+                        "No barcodes found on page {0} of the input file {1}.",
+                        new Object[]{i + 1, tiffFile.getAbsolutePath()});
+            }
+            page.setBarcodes(barcodes);
             pages.add(page);
         }
         iis.close();
@@ -165,6 +205,9 @@ public class BarcodeScanner {
     private void marshalDocument(Document document, String outputFolder, String inputFileName) {
         File outputFile = new File(outputFolder + inputFileName + ".xml");
         if (outputFile.exists() && !outputFile.isDirectory()) {
+            LOGGER.log(Level.INFO,
+                    "The output xml file {0} already exists. A Unique output file name will be created.",
+                    outputFile.getAbsolutePath());
             boolean fileExists = true;
             int i = 1;
             while (fileExists) {
@@ -182,25 +225,27 @@ public class BarcodeScanner {
             // output pretty printed
             jaxbMarshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);
             jaxbMarshaller.marshal(document, outputFile);
-        } catch (JAXBException e) {
-            e.printStackTrace();
+        } catch (JAXBException ex) {
+            LOGGER.log(Level.SEVERE, "The output xml file {0} could not be created.", outputFile.getAbsolutePath());
+            LOGGER.log(Level.SEVERE, null, ex);
         }
     }
 
     private static void moveInvalidInputFile(String inputFileName) {
-        String invalidFileDestination = resourceBundle.getString("inputFolder") + "_Invalid\\";
-        File invalidDestinationFolder = new File(invalidFileDestination);
-        if (!invalidDestinationFolder.exists() || !invalidDestinationFolder.isDirectory()) {
-            System.out.println("Creating invalid file directory: " + invalidFileDestination);
-            invalidDestinationFolder.mkdir();
+        String errorFolderPath = resourceBundle.getString("errorFolder");
+        File errorFolder = new File(errorFolderPath);
+        if (!errorFolder.exists() || !errorFolder.isDirectory()) {
+            LOGGER.log(Level.INFO, "Creating error folder: {0}", errorFolder);
+            errorFolder.mkdir();
         }
         File inputFile = new File(resourceBundle.getString("inputFolder") + inputFileName);
-        File newFileName = new File(invalidFileDestination + inputFileName);
+        LOGGER.log(Level.INFO, "Moving input file {0} to the error folder.", resourceBundle.getString("inputFolder") + inputFileName);
+        File newFileName = new File(errorFolderPath + inputFileName);
         if (newFileName.exists() && !newFileName.isDirectory()) {
             boolean fileExists = true;
             int i = 1;
             while (fileExists) {
-                newFileName = new File(invalidFileDestination + inputFileName + "_" + i);
+                newFileName = new File(errorFolderPath + inputFileName + "_" + i);
                 if (newFileName.exists()) {
                     i++;
                 } else {
