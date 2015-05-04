@@ -88,7 +88,7 @@ public class BarcodeScanner {
     }
 
     private static List<File> getFilesInFolder(final File folder) {
-        List<File> files = new ArrayList<>();
+        List<File> files = new ArrayList<File>();
         for (final File file : folder.listFiles()) {
             if (file.isFile()) {
                 files.add(file);
@@ -100,7 +100,7 @@ public class BarcodeScanner {
     public Document scanPdfDocument(File pdfFile) throws IOException {
         Document document = new Document();
         document.setFileName(pdfFile.getName());
-        List<Page> pages = new ArrayList<>();
+        List<Page> pages = new ArrayList<Page>();
         PDDocument pdfDocument = PDDocument.load(pdfFile);
         List<PDPage> pdfPages = pdfDocument.getDocumentCatalog().getAllPages();
         for (int i = 0; i < pdfPages.size(); i++) {
@@ -119,7 +119,7 @@ public class BarcodeScanner {
     public Document scanTiffDocument(File tiffFile) throws IOException {
         Document document = new Document();
         document.setFileName(tiffFile.getName());
-        List<Page> pages = new ArrayList<>();
+        List<Page> pages = new ArrayList<Page>();
         Iterator iterator = ImageIO.getImageReadersByFormatName("tiff");
         ImageReader reader = (ImageReader) iterator.next();
         ImageInputStream iis = new FileImageInputStream(tiffFile);
@@ -138,12 +138,12 @@ public class BarcodeScanner {
     }
 
     private List<Barcode> scanImage(BufferedImage bufferedImage) {
-        List<Barcode> barcodes = new ArrayList<>();
+        List<Barcode> barcodes = new ArrayList<Barcode>();
         LuminanceSource source = new BufferedImageLuminanceSource(bufferedImage);
         BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
 
         QRCodeReader qrCodeReader = new QRCodeReader();
-        HashMap<DecodeHintType, Object> hints = new HashMap<>();
+        HashMap<DecodeHintType, Object> hints = new HashMap<DecodeHintType, Object>();
         hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
         GenericMultipleBarcodeReader reader = new GenericMultipleBarcodeReader(qrCodeReader);
         Result[] results;

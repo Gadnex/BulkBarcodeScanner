@@ -71,11 +71,11 @@ public class DocumentNGTest {
     public void testXmlFileGeneration() throws JAXBException {
         Document document = new Document();
         document.setFileName("MyDocument.pdf");
-        List<Page> pages = new ArrayList<>();
+        List<Page> pages = new ArrayList<Page>();
         // Page 1
         Page page1 = new Page();
         page1.setPageNumber(1);
-        List<Barcode> page1Barcodes = new ArrayList<>();
+        List<Barcode> page1Barcodes = new ArrayList<Barcode>();
         // Page 1 Barcode 1
         Barcode page1Barcode1 = new Barcode();
         page1Barcode1.setType(BarcodeType.QR);
@@ -91,7 +91,7 @@ public class DocumentNGTest {
         // Page 2
         Page page2 = new Page();
         page2.setPageNumber(2);
-        List<Barcode> page2Barcodes = new ArrayList<>();
+        List<Barcode> page2Barcodes = new ArrayList<Barcode>();
         // Page 2 Barcode 1
         Barcode page2Barcode1 = new Barcode();
         page2Barcode1.setType(BarcodeType.QR);
