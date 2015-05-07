@@ -27,7 +27,9 @@ import com.google.zxing.qrcode.QRCodeReader;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -41,6 +43,7 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.FileImageInputStream;
 import javax.imageio.stream.ImageInputStream;
+import javax.xml.bind.DatatypeConverter;
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
@@ -48,8 +51,6 @@ import net.binarypaper.barcodescanner.entity.Barcode;
 import net.binarypaper.barcodescanner.entity.BarcodeType;
 import net.binarypaper.barcodescanner.entity.Document;
 import net.binarypaper.barcodescanner.entity.Page;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
 import org.eclipse.persistence.jaxb.JAXBContextFactory;
 
 /**
@@ -69,13 +70,14 @@ public class BarcodeScanner {
             for (File file : files) {
                 try {
                     String fileNameLoweCase = file.getName().toLowerCase();
-                    if (fileNameLoweCase.endsWith(".pdf")) {
-                        BarcodeScanner barcodeScanner = new BarcodeScanner();
-                        Document document = barcodeScanner.scanPdfDocument(file);
-                        String outputFolder = resourceBundle.getString("outputFolder");
-                        barcodeScanner.marshalDocument(document, outputFolder, file.getName());
-                        file.delete();
-                    } else if (fileNameLoweCase.endsWith(".tif") || fileNameLoweCase.endsWith(".tiff")) {
+//                    if (fileNameLoweCase.endsWith(".pdf")) {
+//                        BarcodeScanner barcodeScanner = new BarcodeScanner();
+//                        Document document = barcodeScanner.scanPdfDocument(file);
+//                        String outputFolder = resourceBundle.getString("outputFolder");
+//                        barcodeScanner.marshalDocument(document, outputFolder, file.getName());
+//                        file.delete();
+//                    } else 
+                    if (fileNameLoweCase.endsWith(".tif") || fileNameLoweCase.endsWith(".tiff")) {
                         BarcodeScanner barcodeScanner = new BarcodeScanner();
                         Document document = barcodeScanner.scanTiffDocument(file);
                         String outputFolder = resourceBundle.getString("outputFolder");
@@ -125,32 +127,90 @@ public class BarcodeScanner {
         return files;
     }
 
-    public Document scanPdfDocument(File pdfFile) throws IOException {
+    public String readTiffBarcodes(String fileName, String base64InputFile) {
+        // Set log file handler
+        setLogFileHandler();
+        // Create new output Document
         Document document = new Document();
-        document.setFileName(pdfFile.getName());
-        List<Page> pages = new ArrayList<Page>();
-        PDDocument pdfDocument = PDDocument.load(pdfFile);
-        List<PDPage> pdfPages = pdfDocument.getDocumentCatalog().getAllPages();
-        for (int i = 0; i < pdfPages.size(); i++) {
-            Page page = new Page();
-            page.setPageNumber(i + 1);
-            PDPage pdfPage = pdfPages.get(i);
-            BufferedImage bufferedImage = pdfPage.convertToImage();
-            List<Barcode> barcodes = scanImage(bufferedImage);
-            if (barcodes.isEmpty()) {
-                LOGGER.log(Level.WARNING,
-                        "No barcodes found on page {0} of the input file {1}.",
-                        new Object[]{i, pdfFile.getAbsolutePath()});
-            }
-            page.setBarcodes(barcodes);
-            pages.add(page);
+        document.setFileName(fileName);
+        // Convert base64InputFile to byte[]
+        byte[] inputFile = DatatypeConverter.parseBase64Binary(base64InputFile);
+        File tiffFile = new File("");
+        try {
+            FileOutputStream fos = new FileOutputStream(tiffFile);
+//            FileOutputStream fos = new FileOutputStream("C:\\TEMP\\BarcodeScanner\\temp.tif");
+            fos.write(inputFile);
+            fos.close();
+        } catch (IOException iOException) {
+            System.err.println("Bad");
         }
-        pdfDocument.close();
+        List<Page> pages = new ArrayList<Page>();
+        // Read barcodes from tiff file
+        try {
+            Iterator iterator = ImageIO.getImageReadersByFormatName("tiff");
+            ImageReader reader = (ImageReader) iterator.next();
+//            ByteArrayInputStream iis = new ByteArrayInputStream(inputFile);
+            ImageInputStream iis = new FileImageInputStream(tiffFile);
+            reader.setInput(iis, false, true);
+            int pageCount = reader.getNumImages(true);
+            for (int i = 0; i < pageCount; i++) {
+                Page page = new Page();
+                page.setPageNumber(i + 1);
+                BufferedImage bufferedImage = reader.read(i);
+                List<Barcode> barcodes = scanImage(bufferedImage);
+                if (barcodes.isEmpty()) {
+                    LOGGER.log(Level.WARNING,
+                            "No barcodes found on page {0} of the input file.",
+                            i + 1);
+                }
+                page.setBarcodes(barcodes);
+                pages.add(page);
+            }
+            iis.close();
+        } catch (IOException ex) {
+            LOGGER.log(Level.SEVERE, null, ex);
+        }
         document.setPages(pages);
-        return document;
+        // Marshall document to output String
+        StringWriter outputStringWriter = new StringWriter();
+        try {
+            JAXBContext jaxbContext = JAXBContextFactory.createContext(new Class[]{Document.class}, null);
+            Marshaller jaxbMarshaller = jaxbContext.createMarshaller();
+            // output pretty printed
+            jaxbMarshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);
+            jaxbMarshaller.marshal(document, outputStringWriter);
+        } catch (JAXBException ex) {
+            LOGGER.log(Level.SEVERE, "The output xml string could not be created.");
+            LOGGER.log(Level.SEVERE, null, ex);
+        }
+        return outputStringWriter.toString();
     }
 
-    public Document scanTiffDocument(File tiffFile) throws IOException {
+//    private Document scanPdfDocument(File pdfFile) throws IOException {
+//        Document document = new Document();
+//        document.setFileName(pdfFile.getName());
+//        List<Page> pages = new ArrayList<Page>();
+//        PDDocument pdfDocument = PDDocument.load(pdfFile);
+//        List<PDPage> pdfPages = pdfDocument.getDocumentCatalog().getAllPages();
+//        for (int i = 0; i < pdfPages.size(); i++) {
+//            Page page = new Page();
+//            page.setPageNumber(i + 1);
+//            PDPage pdfPage = pdfPages.get(i);
+//            BufferedImage bufferedImage = pdfPage.convertToImage();
+//            List<Barcode> barcodes = scanImage(bufferedImage);
+//            if (barcodes.isEmpty()) {
+//                LOGGER.log(Level.WARNING,
+//                        "No barcodes found on page {0} of the input file {1}.",
+//                        new Object[]{i, pdfFile.getAbsolutePath()});
+//            }
+//            page.setBarcodes(barcodes);
+//            pages.add(page);
+//        }
+//        pdfDocument.close();
+//        document.setPages(pages);
+//        return document;
+//    }
+    private Document scanTiffDocument(File tiffFile) throws IOException {
         Document document = new Document();
         document.setFileName(tiffFile.getName());
         List<Page> pages = new ArrayList<Page>();
@@ -162,7 +222,7 @@ public class BarcodeScanner {
         for (int i = 0; i < pageCount; i++) {
             Page page = new Page();
             page.setPageNumber(i + 1);
-            BufferedImage bufferedImage = reader.read(i);;
+            BufferedImage bufferedImage = reader.read(i);
             List<Barcode> barcodes = scanImage(bufferedImage);
             if (barcodes.isEmpty()) {
                 LOGGER.log(Level.WARNING,
